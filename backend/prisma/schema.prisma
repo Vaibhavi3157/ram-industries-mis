@@ -1,0 +1,265 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ============ MASTER TABLES ============
+
+// Machine Master (9 machines)
+model Machine {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  type      String
+  status    MachineStatus @default(IDLE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  operators          Operator[]
+  productionPlans    ProductionPlan[]
+  productionReports  ProductionReport[]
+}
+
+enum MachineStatus {
+  RUNNING
+  IDLE
+  MAINTENANCE
+}
+
+// Operator Master (18 rotating operators)
+model Operator {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String   @unique
+  shift     Shift    @default(DAY)
+  machineId String?
+  machine   Machine? @relation(fields: [machineId], references: [id])
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  productionReports ProductionReport[]
+}
+
+// Raw Material Master (7-8 types)
+model RawMaterial {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  grade        String   @default("")
+  unit         String   @default("kg")
+  currentStock Float    @default(0)
+  minStock     Float    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  boms              BOM[]
+  productionReports ProductionReport[]
+}
+
+// Component/Part Master
+model Component {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  customerName String
+  totalCavity  Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  moulds            Mould[]
+  boms              BOM[]
+  productionReports ProductionReport[]
+}
+
+// Mould Master (customer provided)
+model Mould {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  componentId  String
+  component    Component @relation(fields: [componentId], references: [id])
+  customerName String
+  totalCavity  Int      @default(1)
+  runCavity    Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  productionPlans   ProductionPlan[]
+  productionReports ProductionReport[]
+}
+
+// Bill of Materials
+model BOM {
+  id             String   @id @default(cuid())
+  componentId    String
+  component      Component @relation(fields: [componentId], references: [id])
+  rawMaterialId  String
+  rawMaterial    RawMaterial @relation(fields: [rawMaterialId], references: [id])
+  weightPerPiece Float    // in grams
+  runnerWeight   Float    // in grams
+  cycleTime      Int      // in seconds
+  packingMaterial String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([componentId, rawMaterialId])
+}
+
+// Rejection Type Master
+model RejectionType {
+  id   String @id @default(cuid())
+  code String @unique
+  name String
+}
+
+// Downtime Code Master
+model DowntimeCode {
+  id   String @id @default(cuid())
+  code String @unique
+  name String
+
+  downtimeLogs DowntimeLog[]
+}
+
+// User Master (Plant Head, Supervisors, Operators)
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(OPERATOR)
+  shift     Shift?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdPlans      ProductionPlan[]
+  supervisedReports ProductionReport[]
+}
+
+enum UserRole {
+  PLANT_HEAD
+  SUPERVISOR
+  OPERATOR
+}
+
+enum Shift {
+  DAY
+  NIGHT
+}
+
+// ============ TRANSACTION TABLES ============
+
+// Production Plan (Daily diary replacement)
+model ProductionPlan {
+  id          String   @id @default(cuid())
+  date        DateTime
+  shift       Shift
+  machineId   String
+  machine     Machine  @relation(fields: [machineId], references: [id])
+  mouldId     String
+  mould       Mould    @relation(fields: [mouldId], references: [id])
+  targetShots Int
+  notes       String?
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([date, shift, machineId])
+}
+
+// Production Report (Main form - replaces Excel sheet)
+model ProductionReport {
+  id               String   @id @default(cuid())
+  date             DateTime
+  shift            Shift
+  machineId        String
+  machine          Machine  @relation(fields: [machineId], references: [id])
+  operatorId       String
+  operator         Operator @relation(fields: [operatorId], references: [id])
+  mouldId          String
+  mould            Mould    @relation(fields: [mouldId], references: [id])
+  componentId      String
+  component        Component @relation(fields: [componentId], references: [id])
+  materialId       String
+  material         RawMaterial @relation(fields: [materialId], references: [id])
+
+  // Process Parameters
+  injectionTime    Float?
+  coolingTime      Float?
+  totalCavity      Int?
+  runCavity        Int?
+
+  // Temperature zones
+  temperatureN     Float?
+  temperature1     Float?
+  temperature2     Float?
+  temperature3     Float?
+  temperature4     Float?
+  temperature5     Float?
+  temperature6     Float?
+
+  processParameter String?
+
+  // Summary
+  okProduction     Int      @default(0)
+  totalRejection   Int      @default(0)
+  remarks          String?
+
+  // Signatures
+  operatorSign     Boolean  @default(false)
+  supervisorSign   Boolean  @default(false)
+  supervisorId     String?
+  supervisor       User?    @relation(fields: [supervisorId], references: [id])
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  hourlyData       HourlyProduction[]
+  downtimeLogs     DowntimeLog[]
+
+  @@unique([date, shift, machineId])
+}
+
+// Hourly Production Data (12 rows per report)
+model HourlyProduction {
+  id          String   @id @default(cuid())
+  reportId    String
+  report      ProductionReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  hour        Int      // 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 for day shift
+  reading     Int      @default(0)
+  shotPerHour Int      @default(0)
+  plan        Int      @default(0)
+
+  // Rejection types (11 columns from PDF)
+  rejectionL  Int      @default(0) // Silver Mark
+  rejectionM  Int      @default(0) // Warpage
+  rejectionN  Int      @default(0) // Weldline
+  rejectionO  Int      @default(0) // Black Spot
+  rejectionP  Int      @default(0) // Dent Mark
+  rejectionQ  Int      @default(0) // Silk Mark
+  rejectionR  Int      @default(0) // Shade Variation
+  rejectionS  Int      @default(0) // Half Shot
+  rejectionT  Int      @default(0) // Flow Mark
+  rejectionU  Int      @default(0) // Scratches/Cracks
+  rejectionW  Int      @default(0) // Ejector Pin Mark
+
+  checkPoint  String?
+  obsSample   Int      @default(0)
+
+  @@unique([reportId, hour])
+}
+
+// Downtime Log
+model DowntimeLog {
+  id             String   @id @default(cuid())
+  reportId       String
+  report         ProductionReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  fromTime       String   // HH:mm format
+  toTime         String   // HH:mm format
+  totalMinutes   Int      @default(0)
+  downtimeCodeId String
+  downtimeCode   DowntimeCode @relation(fields: [downtimeCodeId], references: [id])
+  remarks        String?
+}

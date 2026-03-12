@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+@theme {
+  /* Clean Modern Colorful Scheme */
+  --color-background: #f8fafc;
+  --color-foreground: hsl(222.2 84% 4.9%);
+  --color-card: #FFFFFF;
+  --color-card-foreground: hsl(222.2 84% 4.9%);
+  --color-popover: #FFFFFF;
+  --color-popover-foreground: hsl(222.2 84% 4.9%);
+
+  /* Blue Primary */
+  --color-primary: #3b82f6;
+  --color-primary-light: #60a5fa;
+  --color-primary-foreground: #FFFFFF;
+
+  /* Slate Secondary */
+  --color-secondary: #64748b;
+  --color-secondary-foreground: #FFFFFF;
+
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: hsl(215.4 16.3% 46.9%);
+  --color-accent: #f1f5f9;
+  --color-accent-foreground: #1e293b;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #FFFFFF;
+
+  /* Clean Borders */
+  --color-border: #e2e8f0;
+  --color-input: #e2e8f0;
+  --color-ring: #3b82f6;
+
+  --radius: 0.75rem;
+
+  /* Font families */
+  --font-heading: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+body {
+  background: #f8fafc;
+  min-height: 100vh;
+  color: var(--color-foreground);
+  font-family: var(--font-body);
+}
+
+/* Heading styles */
+h1, h2, h3 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: #1e293b;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Glass effect for cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Shine animation */
+@keyframes shine {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.shine-effect {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+  background-size: 200% 100%;
+  animation: shine 3s infinite;
+}
+
+/* Pulse glow effect - Blue */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s infinite;
+}
+
+/* Card hover effect */
+.card-hover {
+  transition: all 0.3s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Modern input focus */
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Fade in animation */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.5s ease-out forwards;
+}
+
+/* Table styling */
+.premium-table thead {
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  color: white;
+}
+
+.premium-table tbody tr:hover {
+  background: #f1f5f9;
+}
