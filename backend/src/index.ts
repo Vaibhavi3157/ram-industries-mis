@@ -12,6 +12,7 @@ import bomRoutes from './routes/bom';
 import productionPlanRoutes from './routes/productionPlans';
 import productionReportRoutes from './routes/productionReports';
 import dashboardRoutes from './routes/dashboard';
+import packingMaterialRoutes from './routes/packingMaterials';
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use('/api/bom', bomRoutes);
 app.use('/api/production-plans', productionPlanRoutes);
 app.use('/api/production-reports', productionReportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/packing-materials', packingMaterialRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -1,37 +1,63 @@
 import { useState, useEffect } from 'react';
-import { Plus, Save, Calendar, Target, Trash2, Loader2, Clock, Factory } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Plus, Search, Edit, Trash2, Calendar, Target, Loader2, Clock, Factory, Box } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { machinesApi, mouldsApi, productionPlansApi, type Machine, type Mould } from '@/services/api';
-
-interface PlanEntry {
-  id: string;
-  machineId: string;
-  mouldId: string;
-  targetShots: number;
-  notes: string;
-}
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { machinesApi, mouldsApi, productionPlansApi, type Machine, type Mould, type ProductionPlan } from '@/services/api';
 
 export function DailyPlan() {
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [shift, setShift] = useState<'DAY' | 'NIGHT'>('DAY');
-  const [plans, setPlans] = useState<PlanEntry[]>([]);
+  const [plans, setPlans] = useState<ProductionPlan[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [moulds, setMoulds] = useState<Mould[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
+  const [filterShift, setFilterShift] = useState<'ALL' | 'DAY' | 'NIGHT'>('ALL');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+
+  // Dialog state
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<ProductionPlan | null>(null);
+  const [formData, setFormData] = useState({
+    date: new Date().toISOString().split('T')[0],
+    shift: 'DAY' as 'DAY' | 'NIGHT',
+    machineId: '',
+    mouldId: '',
+    targetShots: 0,
+    notes: ''
+  });
 
   useEffect(() => {
     fetchData();
   }, []);
 
   useEffect(() => {
-    fetchPlansForDate();
-  }, [date, shift]);
+    fetchPlans();
+  }, [filterDate, filterShift]);
 
   async function fetchData() {
     try {
@@ -42,6 +68,7 @@ export function DailyPlan() {
       ]);
       setMachines(machinesData);
       setMoulds(mouldsData);
+      await fetchPlans();
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
@@ -49,77 +76,111 @@ export function DailyPlan() {
     }
   }
 
-  async function fetchPlansForDate() {
+  async function fetchPlans() {
     try {
-      const plansData = await productionPlansApi.getAll({ date, shift });
-      if (plansData.length > 0) {
-        setPlans(plansData.map(p => ({
-          id: p.id,
-          machineId: p.machineId,
-          mouldId: p.mouldId,
-          targetShots: p.targetShots,
-          notes: p.notes || ''
-        })));
-      } else {
-        setPlans([]);
-      }
+      const params: any = {};
+      if (filterDate) params.date = filterDate;
+      if (filterShift !== 'ALL') params.shift = filterShift;
+
+      const plansData = await productionPlansApi.getAll(params);
+      setPlans(plansData);
     } catch (error) {
       console.error('Failed to fetch plans:', error);
     }
   }
 
-  const addPlanEntry = () => {
-    setPlans((prev) => [
-      ...prev,
-      { id: `temp-${Date.now()}`, machineId: '', mouldId: '', targetShots: 0, notes: '' },
-    ]);
+  const filteredPlans = plans.filter((p) => {
+    const machineName = p.machine?.name?.toLowerCase() || '';
+    const mouldName = p.mould?.name?.toLowerCase() || '';
+    const query = searchQuery.toLowerCase();
+    return machineName.includes(query) || mouldName.includes(query);
+  });
+
+  const handleAdd = () => {
+    setEditingPlan(null);
+    setFormData({
+      date: filterDate,
+      shift: filterShift === 'ALL' ? 'DAY' : filterShift,
+      machineId: '',
+      mouldId: '',
+      targetShots: 0,
+      notes: ''
+    });
+    setIsDialogOpen(true);
   };
 
-  const removePlanEntry = (id: string) => {
-    setPlans((prev) => prev.filter((p) => p.id !== id));
+  const handleEdit = (plan: ProductionPlan) => {
+    setEditingPlan(plan);
+    setFormData({
+      date: plan.date.split('T')[0],
+      shift: plan.shift as 'DAY' | 'NIGHT',
+      machineId: plan.machineId,
+      mouldId: plan.mouldId,
+      targetShots: plan.targetShots,
+      notes: plan.notes || ''
+    });
+    setIsDialogOpen(true);
   };
 
-  const updatePlanEntry = (id: string, field: string, value: string | number) => {
-    setPlans((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, [field]: value } : p))
-    );
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this plan?')) return;
+    try {
+      await productionPlansApi.delete(id);
+      setPlans((prev) => prev.filter((p) => p.id !== id));
+    } catch (error) {
+      console.error('Failed to delete plan:', error);
+      alert('Failed to delete plan');
+    }
   };
-
-  const totalTargetShots = plans.reduce((s, p) => s + p.targetShots, 0);
-  const machinesPlanned = plans.filter((p) => p.machineId).length;
 
   const handleSave = async () => {
+    if (!formData.machineId || !formData.mouldId) {
+      alert('Please select machine and mould');
+      return;
+    }
+
     try {
       setSaving(true);
-      const plansToSave = plans
-        .filter(p => p.machineId && p.mouldId)
-        .map(p => ({
-          machineId: p.machineId,
-          mouldId: p.mouldId,
-          targetShots: p.targetShots,
-          notes: p.notes
-        }));
-
-      await productionPlansApi.bulkCreate({
-        date,
-        shift,
-        plans: plansToSave,
-        createdById: 'system'
-      });
-
-      alert('Daily plan saved successfully!');
-      fetchPlansForDate();
+      if (editingPlan) {
+        const updated = await productionPlansApi.update(editingPlan.id, {
+          machineId: formData.machineId,
+          mouldId: formData.mouldId,
+          targetShots: formData.targetShots,
+          notes: formData.notes
+        });
+        setPlans((prev) =>
+          prev.map((p) => (p.id === editingPlan.id ? updated : p))
+        );
+      } else {
+        const newPlan = await productionPlansApi.create({
+          date: formData.date,
+          shift: formData.shift,
+          machineId: formData.machineId,
+          mouldId: formData.mouldId,
+          targetShots: formData.targetShots,
+          notes: formData.notes,
+          createdById: 'system'
+        });
+        setPlans((prev) => [newPlan, ...prev]);
+      }
+      setIsDialogOpen(false);
     } catch (error) {
-      console.error('Failed to save plans:', error);
-      alert('Failed to save daily plan');
+      console.error('Failed to save plan:', error);
+      alert('Failed to save plan');
     } finally {
       setSaving(false);
     }
   };
 
-  const getMachineName = (machineId: string) => {
-    return machines.find(m => m.id === machineId)?.name || 'Select Machine';
+  const stats = {
+    total: filteredPlans.length,
+    totalShots: filteredPlans.reduce((sum, p) => sum + p.targetShots, 0),
+    dayShift: filteredPlans.filter((p) => p.shift === 'DAY').length,
+    nightShift: filteredPlans.filter((p) => p.shift === 'NIGHT').length,
   };
+
+  const getMachineName = (id: string) => machines.find(m => m.id === id)?.name || '-';
+  const getMouldName = (id: string) => moulds.find(m => m.id === id)?.name || '-';
 
   if (loading) {
     return (
@@ -133,222 +194,325 @@ export function DailyPlan() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-24">
+    <div className="min-h-screen bg-slate-50 pb-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-5 sticky top-0 z-10 shadow-lg">
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-5 shadow-lg">
         <h1 className="text-xl font-bold">Daily Production Plan</h1>
-        <p className="text-blue-100 text-sm mt-0.5">Plan your production targets</p>
+        <p className="text-blue-100 text-sm mt-0.5">Plan & manage production targets</p>
       </div>
 
       <div className="p-4 space-y-4">
-        {/* Date & Shift Selection */}
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-2">
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 shadow-md">
+            <CardContent className="p-3 text-center">
+              <p className="text-2xl font-bold">{stats.total}</p>
+              <p className="text-xs text-blue-100">Total Plans</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-emerald-50 border-emerald-200">
+            <CardContent className="p-3 text-center">
+              <p className="text-2xl font-bold text-emerald-600">{stats.totalShots.toLocaleString()}</p>
+              <p className="text-xs text-emerald-600">Target Shots</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-amber-50 border-amber-200">
+            <CardContent className="p-3 text-center">
+              <p className="text-2xl font-bold text-amber-600">{stats.dayShift}</p>
+              <p className="text-xs text-amber-600">Day Shift</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-indigo-50 border-indigo-200">
+            <CardContent className="p-3 text-center">
+              <p className="text-2xl font-bold text-indigo-600">{stats.nightShift}</p>
+              <p className="text-xs text-indigo-600">Night Shift</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Filters */}
         <Card className="shadow-md border-0">
-          <CardContent className="p-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs text-slate-500 mb-1.5 block">Date</Label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input
-                    type="date"
-                    value={date}
-                    onChange={(e) => setDate(e.target.value)}
-                    className="pl-9 h-11"
-                  />
-                </div>
+          <CardContent className="p-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="relative">
+                <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  type="date"
+                  value={filterDate}
+                  onChange={(e) => setFilterDate(e.target.value)}
+                  className="pl-8 h-10 text-sm"
+                />
               </div>
-              <div>
-                <Label className="text-xs text-slate-500 mb-1.5 block">Shift</Label>
-                <Select value={shift} onValueChange={(v) => setShift(v as 'DAY' | 'NIGHT')}>
-                  <SelectTrigger className="h-11">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-slate-400" />
-                      <SelectValue />
-                    </div>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="DAY">Day (7AM-7PM)</SelectItem>
-                    <SelectItem value="NIGHT">Night (7PM-7AM)</SelectItem>
-                  </SelectContent>
-                </Select>
+              <Select value={filterShift} onValueChange={(v) => setFilterShift(v as any)}>
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Shifts</SelectItem>
+                  <SelectItem value="DAY">Day Shift</SelectItem>
+                  <SelectItem value="NIGHT">Night Shift</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 h-10"
+                />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-2 gap-3">
-          <Card className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white border-0 shadow-md">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <Target className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-emerald-100 text-xs">Total Target</p>
-                  <p className="text-xl font-bold">{totalTargetShots.toLocaleString()}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-gradient-to-br from-violet-500 to-violet-600 text-white border-0 shadow-md">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <Factory className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-violet-100 text-xs">Machines</p>
-                  <p className="text-xl font-bold">{machinesPlanned}/{machines.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Add Entry Button */}
-        <Button
-          onClick={addPlanEntry}
-          className="w-full h-12 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-md"
-        >
+        {/* Add Button */}
+        <Button onClick={handleAdd} className="w-full h-11 bg-gradient-to-r from-blue-500 to-blue-600">
           <Plus className="h-5 w-5 mr-2" />
-          Add Machine Entry
+          Add New Plan
         </Button>
 
-        {/* Plan Entries */}
-        <div className="space-y-3">
-          {plans.map((plan, index) => (
-            <Card key={plan.id} className="shadow-md border-0 overflow-hidden">
-              <CardHeader className="p-3 pb-2 bg-gradient-to-r from-slate-100 to-slate-50 flex flex-row items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-full bg-blue-500 text-white flex items-center justify-center text-sm font-bold">
-                    {index + 1}
+        {/* Mobile Cards - History */}
+        <div className="lg:hidden space-y-3">
+          {filteredPlans.length === 0 ? (
+            <Card className="border-dashed border-2 border-slate-200">
+              <CardContent className="p-8 text-center">
+                <Calendar className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-500">No plans found</p>
+                <p className="text-slate-400 text-sm mt-1">Tap "Add New Plan" to create one</p>
+              </CardContent>
+            </Card>
+          ) : (
+            filteredPlans.map((plan) => (
+              <Card key={plan.id} className="shadow-md border-0">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2.5 rounded-xl ${plan.shift === 'DAY' ? 'bg-amber-100' : 'bg-indigo-100'}`}>
+                        <Factory className={`h-5 w-5 ${plan.shift === 'DAY' ? 'text-amber-600' : 'text-indigo-600'}`} />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-800">{plan.machine?.name}</p>
+                        <div className="flex items-center gap-1 text-sm text-slate-500">
+                          <Box className="h-3 w-3" />
+                          {plan.mould?.name}
+                        </div>
+                      </div>
+                    </div>
+                    <Badge className={plan.shift === 'DAY' ? 'bg-amber-100 text-amber-700 border-0' : 'bg-indigo-100 text-indigo-700 border-0'}>
+                      {plan.shift === 'DAY' ? 'Day' : 'Night'}
+                    </Badge>
                   </div>
-                  <span className="font-semibold text-slate-700">
-                    {plan.machineId ? getMachineName(plan.machineId) : 'New Entry'}
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => removePlanEntry(plan.id)}
-                  className="h-8 w-8 p-0 hover:bg-red-50"
-                >
-                  <Trash2 className="h-4 w-4 text-red-500" />
-                </Button>
-              </CardHeader>
-              <CardContent className="p-3 space-y-3">
-                {/* Machine Selection */}
-                <div>
-                  <Label className="text-xs text-slate-500 mb-1.5 block">Machine</Label>
-                  <Select
-                    value={plan.machineId}
-                    onValueChange={(v) => updatePlanEntry(plan.id, 'machineId', v)}
-                  >
-                    <SelectTrigger className="h-11">
-                      <SelectValue placeholder="Select machine" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {machines.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
 
-                {/* Mould Selection */}
-                <div>
-                  <Label className="text-xs text-slate-500 mb-1.5 block">Mould</Label>
-                  <Select
-                    value={plan.mouldId}
-                    onValueChange={(v) => updatePlanEntry(plan.id, 'mouldId', v)}
-                  >
-                    <SelectTrigger className="h-11">
-                      <SelectValue placeholder="Select mould" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {moulds.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Target & Notes in a row */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <Label className="text-xs text-slate-500 mb-1.5 block">Target Shots</Label>
-                    <Input
-                      type="number"
-                      value={plan.targetShots || ''}
-                      onChange={(e) => updatePlanEntry(plan.id, 'targetShots', Number(e.target.value))}
-                      placeholder="0"
-                      className="h-11 text-center font-semibold"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <Label className="text-xs text-slate-500 mb-1.5 block">Notes</Label>
-                    <Input
-                      value={plan.notes}
-                      onChange={(e) => updatePlanEntry(plan.id, 'notes', e.target.value)}
-                      placeholder="Instructions..."
-                      className="h-11"
-                    />
-                  </div>
-                </div>
-
-                {/* Quick target badge */}
-                {plan.targetShots > 0 && (
-                  <div className="flex items-center justify-end">
-                    <Badge className="bg-emerald-100 text-emerald-700 border-0">
+                  <div className="flex items-center gap-2 mt-3">
+                    <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">
                       <Target className="h-3 w-3 mr-1" />
                       {plan.targetShots.toLocaleString()} shots
                     </Badge>
+                    {plan.notes && (
+                      <span className="text-xs text-slate-500 truncate flex-1">{plan.notes}</span>
+                    )}
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+
+                  <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEdit(plan)}
+                      className="flex-1"
+                    >
+                      <Edit className="h-4 w-4 mr-1" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleDelete(plan.id)}
+                      className="text-red-500 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
         </div>
 
-        {/* Empty State */}
-        {plans.length === 0 && (
-          <Card className="border-dashed border-2 border-slate-200 bg-slate-50/50">
-            <CardContent className="p-8 text-center">
-              <Factory className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-slate-500 font-medium">No plans added yet</p>
-              <p className="text-slate-400 text-sm mt-1">Tap "Add Machine Entry" to start planning</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Info Note */}
-        <Card className="bg-blue-50 border-blue-100">
-          <CardContent className="p-3">
-            <p className="text-xs text-blue-700">
-              <strong>Tip:</strong> Plan your daily targets around 2-3 PM. You can add notes like "100 shots then switch mould".
-            </p>
+        {/* Desktop Table */}
+        <Card className="hidden lg:block border-slate-200 shadow-md overflow-hidden">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gradient-to-r from-slate-700 to-slate-800">
+                  <TableHead className="text-white font-semibold">Date</TableHead>
+                  <TableHead className="text-white font-semibold">Shift</TableHead>
+                  <TableHead className="text-white font-semibold">Machine</TableHead>
+                  <TableHead className="text-white font-semibold">Mould</TableHead>
+                  <TableHead className="text-white font-semibold">Target Shots</TableHead>
+                  <TableHead className="text-white font-semibold">Notes</TableHead>
+                  <TableHead className="text-right text-white font-semibold">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredPlans.map((plan) => (
+                  <TableRow key={plan.id} className="hover:bg-slate-50">
+                    <TableCell className="text-slate-600">
+                      {new Date(plan.date).toLocaleDateString('en-IN')}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={plan.shift === 'DAY' ? 'bg-amber-100 text-amber-700 border-0' : 'bg-indigo-100 text-indigo-700 border-0'}>
+                        {plan.shift}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-medium text-slate-800">{plan.machine?.name}</TableCell>
+                    <TableCell className="text-slate-600">{plan.mould?.name}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="border-emerald-300 text-emerald-700 bg-emerald-50">
+                        {plan.targetShots.toLocaleString()}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-slate-500 max-w-[150px] truncate">{plan.notes || '-'}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEdit(plan)}
+                        className="hover:bg-blue-50 hover:text-blue-600"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(plan.id)}
+                        className="hover:bg-red-50"
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       </div>
 
-      {/* Fixed Save Button */}
-      {plans.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t shadow-lg">
-          <Button
-            onClick={handleSave}
-            disabled={saving}
-            className="w-full h-12 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white font-semibold shadow-md"
-          >
-            {saving ? (
-              <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-            ) : (
-              <Save className="h-5 w-5 mr-2" />
-            )}
-            Save Daily Plan
-          </Button>
-        </div>
-      )}
+      {/* Add/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="mx-4 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingPlan ? 'Edit Plan' : 'Add New Plan'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Date</Label>
+                <Input
+                  type="date"
+                  value={formData.date}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, date: e.target.value }))}
+                  className="h-11"
+                  disabled={!!editingPlan}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Shift</Label>
+                <Select
+                  value={formData.shift}
+                  onValueChange={(v) => setFormData((prev) => ({ ...prev, shift: v as 'DAY' | 'NIGHT' }))}
+                  disabled={!!editingPlan}
+                >
+                  <SelectTrigger className="h-11">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DAY">Day Shift</SelectItem>
+                    <SelectItem value="NIGHT">Night Shift</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Machine</Label>
+              <Select
+                value={formData.machineId}
+                onValueChange={(v) => setFormData((prev) => ({ ...prev, machineId: v }))}
+              >
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="Select machine" />
+                </SelectTrigger>
+                <SelectContent>
+                  {machines.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      <div className="flex items-center gap-2">
+                        <Factory className="h-4 w-4 text-blue-500" />
+                        {m.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Mould</Label>
+              <Select
+                value={formData.mouldId}
+                onValueChange={(v) => setFormData((prev) => ({ ...prev, mouldId: v }))}
+              >
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder="Select mould" />
+                </SelectTrigger>
+                <SelectContent>
+                  {moulds.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      <div className="flex items-center gap-2">
+                        <Box className="h-4 w-4 text-orange-500" />
+                        {m.name} - {m.customerName}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Target Shots</Label>
+              <Input
+                type="number"
+                value={formData.targetShots || ''}
+                onChange={(e) => setFormData((prev) => ({ ...prev, targetShots: Number(e.target.value) }))}
+                placeholder="e.g., 1000"
+                className="h-11"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Notes (Optional)</Label>
+              <Input
+                value={formData.notes}
+                onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
+                placeholder="e.g., 500 shots then mould change"
+                className="h-11"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={saving} className="w-full sm:w-auto">
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-blue-600">
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

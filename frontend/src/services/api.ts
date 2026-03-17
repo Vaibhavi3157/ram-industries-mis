@@ -102,6 +102,26 @@ export const componentsApi = {
     }),
 };
 
+// ============ PACKING MATERIALS API ============
+export const packingMaterialsApi = {
+  getAll: () => fetchApi<PackingMaterial[]>('/packing-materials'),
+  getById: (id: string) => fetchApi<PackingMaterial>(`/packing-materials/${id}`),
+  create: (data: Partial<PackingMaterial>) =>
+    fetchApi<PackingMaterial>('/packing-materials', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (id: string, data: Partial<PackingMaterial>) =>
+    fetchApi<PackingMaterial>(`/packing-materials/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  delete: (id: string) =>
+    fetchApi<{ message: string }>(`/packing-materials/${id}`, {
+      method: 'DELETE',
+    }),
+};
+
 // ============ MOULDS API ============
 export const mouldsApi = {
   getAll: () => fetchApi<Mould[]>('/moulds'),
@@ -279,6 +299,15 @@ export interface Mould {
   customerName: string;
   totalCavity: number;
   runCavity: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PackingMaterial {
+  id: string;
+  name: string;
+  type: string;
+  description?: string;
   createdAt: string;
   updatedAt: string;
 }

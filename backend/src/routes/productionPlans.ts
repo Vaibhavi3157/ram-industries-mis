@@ -64,6 +64,17 @@ router.get('/date/:date', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { date, shift, machineId, mouldId, targetShots, notes, createdById } = req.body;
+
+    // Get a valid user ID (use first user if 'system' is passed)
+    let userId = createdById;
+    if (!createdById || createdById === 'system') {
+      const defaultUser = await prisma.user.findFirst();
+      if (!defaultUser) {
+        return res.status(400).json({ error: 'No users found in the system' });
+      }
+      userId = defaultUser.id;
+    }
+
     const plan = await prisma.productionPlan.create({
       data: {
         date: new Date(date),
@@ -72,7 +83,7 @@ router.post('/', async (req, res) => {
         mouldId,
         targetShots,
         notes,
-        createdById,
+        createdById: userId,
       },
       include: {
         machine: true,
@@ -81,6 +92,7 @@ router.post('/', async (req, res) => {
     });
     res.status(201).json(plan);
   } catch (error) {
+    console.error('Create plan error:', error);
     res.status(500).json({ error: 'Failed to create production plan' });
   }
 });
@@ -89,6 +101,16 @@ router.post('/', async (req, res) => {
 router.post('/bulk', async (req, res) => {
   try {
     const { date, shift, plans, createdById } = req.body;
+
+    // Get a valid user ID (use first user if 'system' is passed)
+    let userId = createdById;
+    if (!createdById || createdById === 'system') {
+      const defaultUser = await prisma.user.findFirst();
+      if (!defaultUser) {
+        return res.status(400).json({ error: 'No users found in the system' });
+      }
+      userId = defaultUser.id;
+    }
 
     // Delete existing plans for the date and shift
     await prisma.productionPlan.deleteMany({
@@ -107,12 +129,13 @@ router.post('/bulk', async (req, res) => {
         mouldId: plan.mouldId,
         targetShots: plan.targetShots,
         notes: plan.notes,
-        createdById,
+        createdById: userId,
       })),
     });
 
     res.status(201).json({ message: 'Plans saved successfully', count: createdPlans.count });
   } catch (error) {
+    console.error('Bulk create error:', error);
     res.status(500).json({ error: 'Failed to save production plans' });
   }
 });

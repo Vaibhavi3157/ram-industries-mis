@@ -10,6 +10,7 @@ import {
   ChevronDown,
   Sparkles,
   X,
+  Package,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -35,6 +36,7 @@ const navItems: NavItem[] = [
       { title: 'Raw Materials', href: '/masters/materials' },
       { title: 'Components', href: '/masters/components' },
       { title: 'Moulds', href: '/masters/moulds' },
+      { title: 'Packing Materials', href: '/masters/packing-materials' },
       { title: 'BOM Setup', href: '/masters/bom' },
     ],
   },

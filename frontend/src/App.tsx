@@ -7,6 +7,7 @@ import { RawMaterials } from '@/pages/masters/RawMaterials';
 import { Components } from '@/pages/masters/Components';
 import { Moulds } from '@/pages/masters/Moulds';
 import { BOM } from '@/pages/masters/BOM';
+import { PackingMaterials } from '@/pages/masters/PackingMaterials';
 import { DailyPlan } from '@/pages/planning/DailyPlan';
 import { ProductionEntry } from '@/pages/production/ProductionEntry';
 import { ProductionList } from '@/pages/production/ProductionList';
@@ -30,6 +31,7 @@ function App() {
           <Route path="masters/materials" element={<RawMaterials />} />
           <Route path="masters/components" element={<Components />} />
           <Route path="masters/moulds" element={<Moulds />} />
+          <Route path="masters/packing-materials" element={<PackingMaterials />} />
           <Route path="masters/bom" element={<BOM />} />
 
           {/* Planning */}

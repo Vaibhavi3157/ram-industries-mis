@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Save, Plus, Trash2, Clock, Loader2, ChevronLeft, ChevronRight, Factory, User, Settings, Thermometer, Timer, AlertTriangle } from 'lucide-react';
+import { Save, Plus, Trash2, Clock, Loader2, ChevronLeft, ChevronRight, Factory, User, Settings, Thermometer, Timer, AlertTriangle, Package, CheckCircle2, Sun, Moon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { REJECTION_TYPES, DOWNTIME_CODES, DISPLAY_HOURS } from '@/data/constants';
-import { machinesApi, operatorsApi, mouldsApi, rawMaterialsApi, productionReportsApi, type Machine, type Operator, type Mould, type RawMaterial } from '@/services/api';
+import { Switch } from '@/components/ui/switch';
+import { REJECTION_TYPES, DOWNTIME_CODES } from '@/data/constants';
+import { machinesApi, operatorsApi, mouldsApi, rawMaterialsApi, bomApi, productionReportsApi, type Machine, type Operator, type Mould, type RawMaterial, type BOM } from '@/services/api';
 
 interface HourlyData {
-  hour: string;
+  hour: number;
+  displayHour: string;
   reading: number;
   shotPerHour: number;
   plan: number;
@@ -35,15 +37,44 @@ const STEPS = [
   { id: 'summary', title: 'Summary', icon: Save },
 ];
 
+// Generate hours based on shift
+const generateHourlySlots = (shift: 'DAY' | 'NIGHT'): { hour: number; display: string }[] => {
+  const slots: { hour: number; display: string }[] = [];
+
+  if (shift === 'DAY') {
+    // Day shift: 7 AM to 7 PM (7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
+    for (let h = 7; h <= 18; h++) {
+      const displayHour = h > 12 ? h - 12 : h;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      slots.push({ hour: h, display: `${displayHour}:00 ${ampm}` });
+    }
+  } else {
+    // Night shift: 7 PM to 7 AM (19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6)
+    for (let h = 19; h <= 23; h++) {
+      const displayHour = h > 12 ? h - 12 : h;
+      slots.push({ hour: h, display: `${displayHour}:00 PM` });
+    }
+    for (let h = 0; h <= 6; h++) {
+      const displayHour = h === 0 ? 12 : h;
+      const ampm = h === 0 ? 'AM' : 'AM';
+      slots.push({ hour: h, display: `${displayHour}:00 ${ampm}` });
+    }
+  }
+
+  return slots;
+};
+
 export function ProductionEntry() {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [operators, setOperators] = useState<Operator[]>([]);
   const [moulds, setMoulds] = useState<Mould[]>([]);
   const [materials, setMaterials] = useState<RawMaterial[]>([]);
+  const [boms, setBoms] = useState<BOM[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [activeHourIndex, setActiveHourIndex] = useState(0);
+  const [saveAfterShift, setSaveAfterShift] = useState(false);
 
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -64,9 +95,12 @@ export function ProductionEntry() {
     remarks: '',
   });
 
+  const hourSlots = generateHourlySlots(formData.shift);
+
   const [hourlyData, setHourlyData] = useState<HourlyData[]>(
-    DISPLAY_HOURS.map((hour) => ({
-      hour,
+    hourSlots.map((slot) => ({
+      hour: slot.hour,
+      displayHour: slot.display,
       reading: 0,
       shotPerHour: 0,
       plan: 0,
@@ -82,19 +116,39 @@ export function ProductionEntry() {
     fetchData();
   }, []);
 
+  // Reset hourly data when shift changes
+  useEffect(() => {
+    const slots = generateHourlySlots(formData.shift);
+    setHourlyData(
+      slots.map((slot) => ({
+        hour: slot.hour,
+        displayHour: slot.display,
+        reading: 0,
+        shotPerHour: 0,
+        plan: 0,
+        rejections: Object.fromEntries(REJECTION_TYPES.map((r) => [r.code, 0])),
+        checkPoint: '',
+        obsSample: 0,
+      }))
+    );
+    setActiveHourIndex(0);
+  }, [formData.shift]);
+
   async function fetchData() {
     try {
       setLoading(true);
-      const [machinesData, operatorsData, mouldsData, materialsData] = await Promise.all([
+      const [machinesData, operatorsData, mouldsData, materialsData, bomsData] = await Promise.all([
         machinesApi.getAll(),
         operatorsApi.getAll(),
         mouldsApi.getAll(),
-        rawMaterialsApi.getAll()
+        rawMaterialsApi.getAll(),
+        bomApi.getAll()
       ]);
       setMachines(machinesData);
       setOperators(operatorsData.filter(o => o.isActive));
       setMoulds(mouldsData);
       setMaterials(materialsData);
+      setBoms(bomsData);
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
@@ -104,6 +158,11 @@ export function ProductionEntry() {
 
   const handleMouldChange = (mouldId: string) => {
     const mould = moulds.find((m) => m.id === mouldId);
+
+    // Find BOM entry for this mould's component to auto-fill raw material
+    const bomEntry = boms.find((b) => b.componentId === mould?.componentId);
+    const autoMaterial = bomEntry ? materials.find((m) => m.id === bomEntry.rawMaterialId) : null;
+
     setFormData((prev) => ({
       ...prev,
       mouldId,
@@ -111,6 +170,9 @@ export function ProductionEntry() {
       componentName: mould?.component?.name || '',
       totalCavity: mould?.totalCavity?.toString() || '',
       runCavity: mould?.runCavity?.toString() || '',
+      // Auto-fill material from BOM
+      materialId: autoMaterial?.id || prev.materialId,
+      materialName: autoMaterial?.name || prev.materialName,
     }));
   };
 
@@ -192,7 +254,7 @@ export function ProductionEntry() {
         totalRejection,
         remarks: formData.remarks,
         hourlyData: hourlyData.map(h => ({
-          hour: parseInt(h.hour, 10),
+          hour: h.hour,
           reading: h.reading,
           shotPerHour: h.shotPerHour,
           plan: h.plan,
@@ -222,6 +284,7 @@ export function ProductionEntry() {
       alert('Production report saved successfully!');
 
       // Reset form
+      const slots = generateHourlySlots('DAY');
       setFormData({
         date: new Date().toISOString().split('T')[0],
         shift: 'DAY',
@@ -240,8 +303,9 @@ export function ProductionEntry() {
         processParameter: '',
         remarks: '',
       });
-      setHourlyData(DISPLAY_HOURS.map((hour) => ({
-        hour,
+      setHourlyData(slots.map((slot) => ({
+        hour: slot.hour,
+        displayHour: slot.display,
         reading: 0,
         shotPerHour: 0,
         plan: 0,
@@ -251,6 +315,7 @@ export function ProductionEntry() {
       })));
       setDowntimeEntries([]);
       setCurrentStep(0);
+      setSaveAfterShift(false);
     } catch (error) {
       console.error('Failed to save production report:', error);
       alert('Failed to save production report');
@@ -284,7 +349,7 @@ export function ProductionEntry() {
           />
         </div>
         <div className="space-y-2">
-          <Label className="text-sm font-medium">Shift</Label>
+          <Label className="text-sm font-medium">Shift (12 Hours)</Label>
           <Select
             value={formData.shift}
             onValueChange={(v) => setFormData((prev) => ({ ...prev, shift: v as 'DAY' | 'NIGHT' }))}
@@ -293,12 +358,43 @@ export function ProductionEntry() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="DAY">Day (7AM-7PM)</SelectItem>
-              <SelectItem value="NIGHT">Night (7PM-7AM)</SelectItem>
+              <SelectItem value="DAY">
+                <div className="flex items-center gap-2">
+                  <Sun className="h-4 w-4 text-amber-500" />
+                  Day (7 AM - 7 PM)
+                </div>
+              </SelectItem>
+              <SelectItem value="NIGHT">
+                <div className="flex items-center gap-2">
+                  <Moon className="h-4 w-4 text-indigo-500" />
+                  Night (7 PM - 7 AM)
+                </div>
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
+
+      {/* 12 Hour Shift Option */}
+      <Card className="border-blue-200 bg-blue-50/50">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-100">
+                <Clock className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="font-medium text-blue-900">Submit after 12hr shift</p>
+                <p className="text-xs text-blue-600">Save report at end of shift</p>
+              </div>
+            </div>
+            <Switch
+              checked={saveAfterShift}
+              onCheckedChange={setSaveAfterShift}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Machine */}
       <div className="space-y-2">
@@ -359,14 +455,23 @@ export function ProductionEntry() {
 
       {formData.componentName && (
         <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
-          <p className="text-xs text-blue-600 font-medium">Component</p>
+          <p className="text-xs text-blue-600 font-medium">Component (Auto-filled)</p>
           <p className="text-sm font-semibold text-blue-800">{formData.componentName}</p>
         </div>
       )}
 
-      {/* Material */}
+      {/* Material - Auto-filled from BOM */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Material Name</Label>
+        <Label className="text-sm font-medium flex items-center gap-2">
+          <Package className="h-4 w-4 text-violet-500" />
+          Raw Material
+          {formData.materialId && formData.mouldId && (
+            <Badge className="bg-green-100 text-green-700 border-0 text-xs ml-2">
+              <CheckCircle2 className="h-3 w-3 mr-1" />
+              Auto-filled from BOM
+            </Badge>
+          )}
+        </Label>
         <Select value={formData.materialId} onValueChange={handleMaterialChange}>
           <SelectTrigger className="h-12">
             <SelectValue placeholder="Select material" />
@@ -487,99 +592,143 @@ export function ProductionEntry() {
 
     return (
       <div className="space-y-4">
-        {/* Hour Selector */}
-        <div className="flex items-center justify-between bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl p-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setActiveHourIndex((prev) => Math.max(0, prev - 1))}
-            disabled={activeHourIndex === 0}
-            className="text-white hover:bg-white/20 disabled:opacity-50"
-          >
-            <ChevronLeft className="h-5 w-5" />
-          </Button>
-          <div className="text-center">
-            <p className="text-xs text-blue-100">Hour</p>
-            <p className="text-2xl font-bold">{data.hour}</p>
-            <p className="text-xs text-blue-100">{activeHourIndex + 1} of {hourlyData.length}</p>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setActiveHourIndex((prev) => Math.min(hourlyData.length - 1, prev + 1))}
-            disabled={activeHourIndex === hourlyData.length - 1}
-            className="text-white hover:bg-white/20 disabled:opacity-50"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {/* Quick Hour Navigation */}
-        <div className="flex gap-1 overflow-x-auto pb-2">
-          {hourlyData.map((h, i) => {
-            const hasData = h.reading > 0 || h.shotPerHour > 0;
-            return (
-              <button
-                key={h.hour}
-                onClick={() => setActiveHourIndex(i)}
-                className={`px-2 py-1 text-xs rounded-lg flex-shrink-0 transition-colors ${
-                  i === activeHourIndex
-                    ? 'bg-blue-500 text-white'
-                    : hasData
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-slate-100 text-slate-600'
-                }`}
+        {/* Hour Selector - Improved UI */}
+        <Card className="border-0 shadow-lg overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4">
+            <div className="flex items-center justify-between">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setActiveHourIndex((prev) => Math.max(0, prev - 1))}
+                disabled={activeHourIndex === 0}
+                className="text-white hover:bg-white/20 disabled:opacity-50 h-12 w-12"
               >
-                {h.hour}
-              </button>
-            );
-          })}
-        </div>
+                <ChevronLeft className="h-6 w-6" />
+              </Button>
+              <div className="text-center">
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  {formData.shift === 'DAY' ? (
+                    <Sun className="h-5 w-5 text-amber-300" />
+                  ) : (
+                    <Moon className="h-5 w-5 text-blue-200" />
+                  )}
+                  <span className="text-sm text-blue-100">
+                    {formData.shift === 'DAY' ? 'Day Shift' : 'Night Shift'}
+                  </span>
+                </div>
+                <p className="text-3xl font-bold">{data.displayHour}</p>
+                <p className="text-sm text-blue-200 mt-1">
+                  Hour {activeHourIndex + 1} of {hourlyData.length}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setActiveHourIndex((prev) => Math.min(hourlyData.length - 1, prev + 1))}
+                disabled={activeHourIndex === hourlyData.length - 1}
+                className="text-white hover:bg-white/20 disabled:opacity-50 h-12 w-12"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Hour Pills */}
+          <div className="p-3 bg-slate-50 border-t">
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {hourlyData.map((h, i) => {
+                const hasData = h.reading > 0 || h.shotPerHour > 0;
+                const shortDisplay = h.displayHour.replace(':00', '').replace(' ', '');
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setActiveHourIndex(i)}
+                    className={`px-3 py-2 text-xs font-medium rounded-lg flex-shrink-0 transition-all ${
+                      i === activeHourIndex
+                        ? 'bg-blue-600 text-white shadow-md scale-105'
+                        : hasData
+                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                        : 'bg-white text-slate-600 border border-slate-200 hover:border-blue-300'
+                    }`}
+                  >
+                    {shortDisplay}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </Card>
 
         {/* Production Data */}
         <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs text-slate-500">Reading</Label>
-            <Input
-              type="number"
-              value={data.reading || ''}
-              onChange={(e) => handleHourlyDataChange(activeHourIndex, 'reading', Number(e.target.value))}
-              className="h-12 text-center text-lg font-semibold"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-slate-500">Shot/Hour</Label>
-            <Input
-              type="number"
-              value={data.shotPerHour || ''}
-              onChange={(e) => handleHourlyDataChange(activeHourIndex, 'shotPerHour', Number(e.target.value))}
-              className="h-12 text-center text-lg font-semibold bg-emerald-50 border-emerald-200"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-slate-500">Plan</Label>
-            <Input
-              type="number"
-              value={data.plan || ''}
-              onChange={(e) => handleHourlyDataChange(activeHourIndex, 'plan', Number(e.target.value))}
-              className="h-12 text-center text-lg font-semibold"
-            />
-          </div>
+          <Card className="border-slate-200">
+            <CardContent className="p-3 text-center">
+              <Label className="text-xs text-slate-500 block mb-2">Previous Reading</Label>
+              <Input
+                type="number"
+                value={data.reading || ''}
+                onChange={(e) => {
+                  const prevReading = Number(e.target.value);
+                  handleHourlyDataChange(activeHourIndex, 'reading', prevReading);
+                  // Auto-calculate shot
+                  const shot = data.plan - prevReading;
+                  if (shot >= 0) {
+                    handleHourlyDataChange(activeHourIndex, 'shotPerHour', shot);
+                  }
+                }}
+                className="h-14 text-center text-xl font-bold border-2 focus:border-blue-500"
+                placeholder="0"
+              />
+            </CardContent>
+          </Card>
+          <Card className="border-blue-200">
+            <CardContent className="p-3 text-center">
+              <Label className="text-xs text-blue-600 block mb-2">Current Reading</Label>
+              <Input
+                type="number"
+                value={data.plan || ''}
+                onChange={(e) => {
+                  const currReading = Number(e.target.value);
+                  handleHourlyDataChange(activeHourIndex, 'plan', currReading);
+                  // Auto-calculate shot
+                  const shot = currReading - data.reading;
+                  if (shot >= 0) {
+                    handleHourlyDataChange(activeHourIndex, 'shotPerHour', shot);
+                  }
+                }}
+                className="h-14 text-center text-xl font-bold border-2 border-blue-300 focus:border-blue-500 bg-white"
+                placeholder="0"
+              />
+            </CardContent>
+          </Card>
+          <Card className="border-emerald-200 bg-emerald-50/50">
+            <CardContent className="p-3 text-center">
+              <Label className="text-xs text-emerald-600 block mb-2">Shot (Auto)</Label>
+              <div className="h-14 flex items-center justify-center text-2xl font-bold text-emerald-600 bg-emerald-100 rounded-lg border-2 border-emerald-300">
+                {data.shotPerHour || 0}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Rejections */}
         <Card className="border-red-200">
-          <CardHeader className="py-2 px-3 bg-red-50 border-b border-red-200">
+          <CardHeader className="py-3 px-4 bg-red-50 border-b border-red-200">
             <CardTitle className="text-sm flex items-center justify-between text-red-700">
-              <span>Rejections</span>
-              <Badge variant="destructive">{hourRejectionTotal}</Badge>
+              <span className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                Rejections
+              </span>
+              <Badge variant="destructive" className="text-sm px-3">
+                {hourRejectionTotal}
+              </Badge>
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-3">
+          <CardContent className="p-4">
             <div className="grid grid-cols-4 gap-2">
               {REJECTION_TYPES.map((r) => (
                 <div key={r.code} className="space-y-1">
-                  <Label className="text-xs text-center block text-slate-500" title={r.name}>
+                  <Label className="text-xs text-center block text-slate-500 font-medium" title={r.name}>
                     {r.code}
                   </Label>
                   <Input
@@ -588,16 +737,24 @@ export function ProductionEntry() {
                     onChange={(e) =>
                       handleHourlyDataChange(activeHourIndex, `rejection_${r.code}`, Number(e.target.value))
                     }
-                    className="h-10 text-center text-sm"
+                    className="h-11 text-center font-semibold"
                   />
                 </div>
               ))}
             </div>
-            <div className="mt-3 p-2 bg-slate-50 rounded-lg">
-              <p className="text-xs text-slate-500 leading-relaxed">
-                <strong>L</strong>-Silver, <strong>M</strong>-Warpage, <strong>N</strong>-Weldline, <strong>O</strong>-Black Spot,
-                <strong>P</strong>-Dent, <strong>Q</strong>-Silk, <strong>R</strong>-Shade, <strong>S</strong>-Half Shot,
-                <strong>T</strong>-Flow, <strong>U</strong>-Scratch, <strong>W</strong>-Ejector Pin
+            <div className="mt-4 p-3 bg-slate-50 rounded-xl">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                <span className="font-semibold">L</span>-Silver Mark,
+                <span className="font-semibold ml-1">M</span>-Warpage,
+                <span className="font-semibold ml-1">N</span>-Weldline,
+                <span className="font-semibold ml-1">O</span>-Black Spot,
+                <span className="font-semibold ml-1">P</span>-Dent Mark,
+                <span className="font-semibold ml-1">Q</span>-Silk Mark,
+                <span className="font-semibold ml-1">R</span>-Shade,
+                <span className="font-semibold ml-1">S</span>-Half Shot,
+                <span className="font-semibold ml-1">T</span>-Flow Mark,
+                <span className="font-semibold ml-1">U</span>-Scratches,
+                <span className="font-semibold ml-1">W</span>-Ejector Pin
               </p>
             </div>
           </CardContent>
@@ -627,18 +784,24 @@ export function ProductionEntry() {
 
         {/* Running Totals */}
         <div className="grid grid-cols-3 gap-2">
-          <div className="p-3 bg-blue-50 rounded-xl text-center">
-            <p className="text-xs text-blue-600">Total Prod.</p>
-            <p className="text-xl font-bold text-blue-700">{totalProduction}</p>
-          </div>
-          <div className="p-3 bg-red-50 rounded-xl text-center">
-            <p className="text-xs text-red-600">Total Rej.</p>
-            <p className="text-xl font-bold text-red-700">{totalRejection}</p>
-          </div>
-          <div className="p-3 bg-emerald-50 rounded-xl text-center">
-            <p className="text-xs text-emerald-600">OK Prod.</p>
-            <p className="text-xl font-bold text-emerald-700">{okProduction}</p>
-          </div>
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0">
+            <CardContent className="p-4 text-center">
+              <p className="text-blue-100 text-xs">Total Production</p>
+              <p className="text-2xl font-bold">{totalProduction.toLocaleString()}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0">
+            <CardContent className="p-4 text-center">
+              <p className="text-red-100 text-xs">Total Rejection</p>
+              <p className="text-2xl font-bold">{totalRejection.toLocaleString()}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white border-0">
+            <CardContent className="p-4 text-center">
+              <p className="text-emerald-100 text-xs">OK Production</p>
+              <p className="text-2xl font-bold">{okProduction.toLocaleString()}</p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     );
@@ -761,7 +924,7 @@ export function ProductionEntry() {
       if (entry.fromTime && entry.toTime) {
         const from = new Date(`2000-01-01T${entry.fromTime}`);
         const to = new Date(`2000-01-01T${entry.toTime}`);
-        return total + (to.getTime() - from.getTime()) / 60000; // minutes
+        return total + (to.getTime() - from.getTime()) / 60000;
       }
       return total;
     }, 0);
@@ -773,19 +936,19 @@ export function ProductionEntry() {
           <Card className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white border-0">
             <CardContent className="p-4 text-center">
               <p className="text-emerald-100 text-xs">OK Production</p>
-              <p className="text-3xl font-bold">{okProduction}</p>
+              <p className="text-3xl font-bold">{okProduction.toLocaleString()}</p>
             </CardContent>
           </Card>
           <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white border-0">
             <CardContent className="p-4 text-center">
               <p className="text-red-100 text-xs">Rejection</p>
-              <p className="text-3xl font-bold">{totalRejection}</p>
+              <p className="text-3xl font-bold">{totalRejection.toLocaleString()}</p>
             </CardContent>
           </Card>
           <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0">
             <CardContent className="p-4 text-center">
               <p className="text-blue-100 text-xs">Total</p>
-              <p className="text-3xl font-bold">{totalProduction}</p>
+              <p className="text-3xl font-bold">{totalProduction.toLocaleString()}</p>
             </CardContent>
           </Card>
         </div>
@@ -799,7 +962,13 @@ export function ProductionEntry() {
             </div>
             <div className="flex justify-between items-center py-2 border-b">
               <span className="text-slate-500 text-sm">Shift</span>
-              <Badge>{formData.shift === 'DAY' ? 'Day Shift' : 'Night Shift'}</Badge>
+              <Badge className={formData.shift === 'DAY' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}>
+                {formData.shift === 'DAY' ? (
+                  <><Sun className="h-3 w-3 mr-1" />Day (12hr)</>
+                ) : (
+                  <><Moon className="h-3 w-3 mr-1" />Night (12hr)</>
+                )}
+              </Badge>
             </div>
             <div className="flex justify-between items-center py-2 border-b">
               <span className="text-slate-500 text-sm">Machine</span>
@@ -812,6 +981,10 @@ export function ProductionEntry() {
             <div className="flex justify-between items-center py-2 border-b">
               <span className="text-slate-500 text-sm">Component</span>
               <span className="font-semibold">{formData.componentName || '-'}</span>
+            </div>
+            <div className="flex justify-between items-center py-2 border-b">
+              <span className="text-slate-500 text-sm">Raw Material</span>
+              <span className="font-semibold">{formData.materialName || '-'}</span>
             </div>
             <div className="flex justify-between items-center py-2 border-b">
               <span className="text-slate-500 text-sm">Downtime</span>
@@ -875,8 +1048,21 @@ export function ProductionEntry() {
     <div className="min-h-screen bg-slate-50 pb-24">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-5 shadow-lg">
-        <h1 className="text-xl font-bold">Production Entry</h1>
-        <p className="text-blue-100 text-sm mt-0.5">Daily Production Cum Inspection Report</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">Production Entry</h1>
+            <p className="text-blue-100 text-sm mt-0.5">Daily Production Cum Inspection Report</p>
+          </div>
+          {formData.shift && (
+            <Badge className={`${formData.shift === 'DAY' ? 'bg-amber-500' : 'bg-indigo-500'} text-white border-0`}>
+              {formData.shift === 'DAY' ? (
+                <><Sun className="h-3 w-3 mr-1" />12hr Day</>
+              ) : (
+                <><Moon className="h-3 w-3 mr-1" />12hr Night</>
+              )}
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* Step Progress */}

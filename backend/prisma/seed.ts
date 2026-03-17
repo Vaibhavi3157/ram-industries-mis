@@ -1,6 +1,12 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaLibSql } from '@prisma/adapter-libsql';
+import path from 'path';
 
-const prisma = new PrismaClient();
+const dbPath = path.join(__dirname, 'dev.db');
+const adapter = new PrismaLibSql({
+  url: `file:${dbPath}`,
+});
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   console.log('Seeding database...');
@@ -149,6 +155,10 @@ async function main() {
   }
   console.log('Components seeded');
 
+  // Get raw materials for BOM mapping
+  const createdMaterials = await prisma.rawMaterial.findMany();
+  const getMaterialId = (name: string) => createdMaterials.find(m => m.name === name)?.id || createdMaterials[0].id;
+
   // Seed Moulds (linked to components)
   const moulds = [
     { name: 'MLD-001', componentId: createdComponents[0].id, customerName: 'ABC Motors', totalCavity: 4, runCavity: 4 },
@@ -167,6 +177,25 @@ async function main() {
     });
   }
   console.log('Moulds seeded');
+
+  // Seed BOM (Component to Raw Material mapping)
+  const bomEntries = [
+    { componentId: createdComponents[0].id, rawMaterialId: getMaterialId('ABS Black'), weightPerPiece: 45.5, runnerWeight: 8.2, cycleTime: 35 },
+    { componentId: createdComponents[1].id, rawMaterialId: getMaterialId('ABS White'), weightPerPiece: 62.0, runnerWeight: 12.5, cycleTime: 42 },
+    { componentId: createdComponents[2].id, rawMaterialId: getMaterialId('PP Natural'), weightPerPiece: 18.3, runnerWeight: 4.5, cycleTime: 25 },
+    { componentId: createdComponents[3].id, rawMaterialId: getMaterialId('PP Black'), weightPerPiece: 8.5, runnerWeight: 2.8, cycleTime: 18 },
+    { componentId: createdComponents[4].id, rawMaterialId: getMaterialId('Nylon'), weightPerPiece: 85.0, runnerWeight: 15.0, cycleTime: 55 },
+    { componentId: createdComponents[5].id, rawMaterialId: getMaterialId('HDPE'), weightPerPiece: 12.0, runnerWeight: 3.2, cycleTime: 22 },
+  ];
+
+  for (const bom of bomEntries) {
+    await prisma.bOM.upsert({
+      where: { componentId_rawMaterialId: { componentId: bom.componentId, rawMaterialId: bom.rawMaterialId } },
+      update: {},
+      create: bom,
+    });
+  }
+  console.log('BOM entries seeded');
 
   // Seed Users (Plant Head, Supervisors)
   const users = [

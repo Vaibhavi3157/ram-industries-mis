@@ -90,19 +90,32 @@ model Mould {
 
 // Bill of Materials
 model BOM {
-  id             String   @id @default(cuid())
-  componentId    String
-  component      Component @relation(fields: [componentId], references: [id])
-  rawMaterialId  String
-  rawMaterial    RawMaterial @relation(fields: [rawMaterialId], references: [id])
-  weightPerPiece Float    // in grams
-  runnerWeight   Float    // in grams
-  cycleTime      Int      // in seconds
-  packingMaterial String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                String   @id @default(cuid())
+  componentId       String
+  component         Component @relation(fields: [componentId], references: [id])
+  rawMaterialId     String
+  rawMaterial       RawMaterial @relation(fields: [rawMaterialId], references: [id])
+  weightPerPiece    Float    // in grams
+  runnerWeight      Float    // in grams
+  cycleTime         Int      // in seconds
+  packingMaterialId String?
+  packingMaterial   PackingMaterial? @relation(fields: [packingMaterialId], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@unique([componentId, rawMaterialId])
+}
+
+// Packing Material Master
+model PackingMaterial {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  type        String   // Box, Polybag, Carton, Tray, etc.
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  boms BOM[]
 }
 
 // Rejection Type Master
