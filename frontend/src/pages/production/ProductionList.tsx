@@ -157,21 +157,22 @@ export function ProductionList() {
         <motion.div variants={itemVariants}>
           <Card className="border border-slate-200 overflow-hidden">
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gradient-to-r from-slate-700 to-slate-800 hover:bg-slate-700">
-                    <TableHead className="text-white font-semibold">Date</TableHead>
-                    <TableHead className="text-white font-semibold">Shift</TableHead>
-                    <TableHead className="text-white font-semibold">Machine</TableHead>
-                    <TableHead className="text-white font-semibold">Operator</TableHead>
-                    <TableHead className="text-white font-semibold">Component</TableHead>
-                    <TableHead className="text-white font-semibold">OK Production</TableHead>
-                    <TableHead className="text-white font-semibold">Rejection</TableHead>
-                    <TableHead className="text-white font-semibold">Efficiency</TableHead>
-                    <TableHead className="text-right text-white font-semibold">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              <div className="max-h-[calc(100vh-320px)] overflow-auto relative">
+                <Table>
+                  <TableHeader className="[&_tr]:border-b-0" style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+                    <TableRow className="bg-slate-800 hover:bg-slate-800">
+                      <TableHead className="text-white font-semibold bg-slate-800" style={{ position: 'sticky', top: 0 }}>Date</TableHead>
+                      <TableHead className="text-white font-semibold bg-slate-800" style={{ position: 'sticky', top: 0 }}>Shift</TableHead>
+                      <TableHead className="text-white font-semibold bg-slate-800" style={{ position: 'sticky', top: 0 }}>Machine</TableHead>
+                      <TableHead className="text-white font-semibold bg-slate-800" style={{ position: 'sticky', top: 0 }}>Operator</TableHead>
+                      <TableHead className="text-white font-semibold bg-slate-800" style={{ position: 'sticky', top: 0 }}>Component</TableHead>
+                      <TableHead className="text-white font-semibold bg-slate-800" style={{ position: 'sticky', top: 0 }}>OK Production</TableHead>
+                      <TableHead className="text-white font-semibold bg-slate-800" style={{ position: 'sticky', top: 0 }}>Rejection</TableHead>
+                      <TableHead className="text-white font-semibold bg-slate-800" style={{ position: 'sticky', top: 0 }}>Efficiency</TableHead>
+                      <TableHead className="text-right text-white font-semibold bg-slate-800" style={{ position: 'sticky', top: 0 }}>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                   {filteredReports.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
@@ -229,8 +230,9 @@ export function ProductionList() {
                       );
                     })
                   )}
-                </TableBody>
-              </Table>
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </motion.div>
