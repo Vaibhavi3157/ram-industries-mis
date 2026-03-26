@@ -103,6 +103,8 @@ handleMouldChange(mouldId)       // Auto-fills component, material from BOM
 - Mould → Component: `mould.componentId`
 - Component → Material: `boms.find(b => b.componentId)`
 
+**Note**: Reviewed and approved (26 March 2026) - No Machine-Mould master table needed. Using ProductionPlan/last ProductionReport for mould auto-fill is acceptable.
+
 ## Running the Application
 ```bash
 # Backend
