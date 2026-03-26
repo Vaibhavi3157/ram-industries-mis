@@ -407,5 +407,79 @@ All operators show "-" in the Machine column.
 
 ---
 
-*Last Updated: 26 March 2026 11:45 AM*
+---
+
+## New Features Implemented
+
+### FEATURE-001: Auto-fill in Production Entry (Implemented 26 March 2026)
+
+**Description**: When creating a new production entry, selecting an operator or machine now automatically fills related fields based on master data.
+
+**Auto-fill Logic**:
+
+1. **Operator Selection → Machine Auto-fill**
+   - When an operator is selected, if they have an assigned machine, it's automatically filled
+   - Dropdown shows operators with their assigned machines: "Dinesh Patel (Machine 4)"
+
+2. **Machine Selection → Mould Auto-fill**
+   - First checks today's production plan for the machine/shift
+   - If no plan, uses the last production report for that machine
+   - Auto-fills the mould that was planned/used
+
+3. **Mould Selection → Component & Material Auto-fill**
+   - Component auto-filled from mould's linked component
+   - Raw Material auto-filled from BOM (Bill of Materials)
+   - Cavity counts (Total/Run) auto-filled from mould
+
+**Files Modified**:
+- `frontend/src/pages/production/ProductionEntry.tsx`
+
+**Key Code Changes**:
+```tsx
+// handleOperatorChange - auto-fills machine
+const handleOperatorChange = (operatorId: string) => {
+  const operator = operators.find((o) => o.id === operatorId);
+  if (operator?.machineId && operator?.machine) {
+    setFormData((prev) => ({
+      ...prev,
+      operatorId,
+      machineId: operator.machineId!,
+    }));
+    handleMachineChange(operator.machineId!);
+  }
+};
+
+// handleMachineChange - auto-fills mould from plan/last production
+const handleMachineChange = (machineId: string) => {
+  // Check today's plan first
+  const todayPlan = productionPlans.find(
+    (p) => p.machineId === machineId && p.shift === formData.shift
+  );
+  if (todayPlan?.mouldId) {
+    handleMouldChange(todayPlan.mouldId);
+    return;
+  }
+  // Fallback to last production report
+  const lastReport = recentReports
+    .filter((r) => r.machineId === machineId)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+  if (lastReport?.mouldId) {
+    handleMouldChange(lastReport.mouldId);
+  }
+};
+```
+
+**UI Enhancements**:
+- Green notification card shows auto-fill actions
+- Operator dropdown shows assigned machine in parentheses
+- "Auto-filled from BOM" badge on Raw Material field
+
+**Screenshots**:
+- production_entry_operator_dropdown.png
+- production_entry_after_operator_select.png
+- production_entry_scrolled.png
+
+---
+
+*Last Updated: 26 March 2026 12:30 PM*
 *Testing Tool: dev-browser (Playwright-based)*

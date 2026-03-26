@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { REJECTION_TYPES, DOWNTIME_CODES } from '@/data/constants';
-import { machinesApi, operatorsApi, mouldsApi, rawMaterialsApi, bomApi, productionReportsApi, type Machine, type Operator, type Mould, type RawMaterial, type BOM } from '@/services/api';
+import { machinesApi, operatorsApi, mouldsApi, rawMaterialsApi, bomApi, productionReportsApi, productionPlansApi, type Machine, type Operator, type Mould, type RawMaterial, type BOM, type ProductionPlan, type ProductionReport } from '@/services/api';
 
 interface HourlyData {
   hour: number;
@@ -70,8 +70,11 @@ export function ProductionEntry() {
   const [moulds, setMoulds] = useState<Mould[]>([]);
   const [materials, setMaterials] = useState<RawMaterial[]>([]);
   const [boms, setBoms] = useState<BOM[]>([]);
+  const [productionPlans, setProductionPlans] = useState<ProductionPlan[]>([]);
+  const [recentReports, setRecentReports] = useState<ProductionReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [autoFillMessage, setAutoFillMessage] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const [activeHourIndex, setActiveHourIndex] = useState(0);
   const [saveAfterShift, setSaveAfterShift] = useState(false);
@@ -134,27 +137,98 @@ export function ProductionEntry() {
     setActiveHourIndex(0);
   }, [formData.shift]);
 
+  // Clear auto-fill message after 5 seconds
+  useEffect(() => {
+    if (autoFillMessage) {
+      const timer = setTimeout(() => setAutoFillMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [autoFillMessage]);
+
   async function fetchData() {
     try {
       setLoading(true);
-      const [machinesData, operatorsData, mouldsData, materialsData, bomsData] = await Promise.all([
+      const today = new Date().toISOString().split('T')[0];
+      const [machinesData, operatorsData, mouldsData, materialsData, bomsData, plansData, reportsData] = await Promise.all([
         machinesApi.getAll(),
         operatorsApi.getAll(),
         mouldsApi.getAll(),
         rawMaterialsApi.getAll(),
-        bomApi.getAll()
+        bomApi.getAll(),
+        productionPlansApi.getAll({ date: today }),
+        productionReportsApi.getAll()
       ]);
       setMachines(machinesData);
       setOperators(operatorsData.filter(o => o.isActive));
       setMoulds(mouldsData);
       setMaterials(materialsData);
       setBoms(bomsData);
+      setProductionPlans(plansData);
+      setRecentReports(reportsData);
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
       setLoading(false);
     }
   }
+
+  // Auto-fill machine when operator is selected (if operator has assigned machine)
+  const handleOperatorChange = (operatorId: string) => {
+    const operator = operators.find((o) => o.id === operatorId);
+
+    if (operator?.machineId && operator?.machine) {
+      // Auto-fill machine from operator's assigned machine
+      setFormData((prev) => ({
+        ...prev,
+        operatorId,
+        machineId: operator.machineId!,
+      }));
+      setAutoFillMessage(`Machine auto-filled: ${operator.machine.name} (assigned to ${operator.name})`);
+
+      // Trigger machine change to auto-fill mould
+      setTimeout(() => handleMachineChange(operator.machineId!), 100);
+    } else {
+      setFormData((prev) => ({ ...prev, operatorId }));
+      setAutoFillMessage(null);
+    }
+  };
+
+  // Auto-fill mould when machine is selected (from today's plan or last production)
+  const handleMachineChange = (machineId: string) => {
+    setFormData((prev) => ({ ...prev, machineId }));
+
+    // First, check today's production plan for this machine and shift
+    const todayPlan = productionPlans.find(
+      (p) => p.machineId === machineId && p.shift === formData.shift
+    );
+
+    if (todayPlan?.mouldId) {
+      // Auto-fill mould from today's plan
+      const mould = moulds.find((m) => m.id === todayPlan.mouldId);
+      if (mould) {
+        setAutoFillMessage(`Mould auto-filled: ${mould.name} (from today's plan)`);
+        handleMouldChange(todayPlan.mouldId);
+        return;
+      }
+    }
+
+    // If no plan, check last production report for this machine
+    const lastReport = recentReports
+      .filter((r) => r.machineId === machineId)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+    if (lastReport?.mouldId) {
+      const mould = moulds.find((m) => m.id === lastReport.mouldId);
+      if (mould) {
+        setAutoFillMessage(`Mould auto-filled: ${mould.name} (from last production)`);
+        handleMouldChange(lastReport.mouldId);
+        return;
+      }
+    }
+
+    // No auto-fill available
+    setAutoFillMessage(null);
+  };
 
   const handleMouldChange = (mouldId: string) => {
     const mould = moulds.find((m) => m.id === mouldId);
@@ -174,6 +248,13 @@ export function ProductionEntry() {
       materialId: autoMaterial?.id || prev.materialId,
       materialName: autoMaterial?.name || prev.materialName,
     }));
+
+    // Show material auto-fill message
+    if (autoMaterial && !autoFillMessage?.includes('Material')) {
+      setAutoFillMessage((prev) =>
+        prev ? `${prev} | Material: ${autoMaterial.name}` : `Material auto-filled: ${autoMaterial.name} (from BOM)`
+      );
+    }
   };
 
   const handleMaterialChange = (materialId: string) => {
@@ -404,7 +485,7 @@ export function ProductionEntry() {
         </Label>
         <Select
           value={formData.machineId}
-          onValueChange={(v) => setFormData((prev) => ({ ...prev, machineId: v }))}
+          onValueChange={handleMachineChange}
         >
           <SelectTrigger className="h-12">
             <SelectValue placeholder="Select machine" />
@@ -425,18 +506,32 @@ export function ProductionEntry() {
         </Label>
         <Select
           value={formData.operatorId}
-          onValueChange={(v) => setFormData((prev) => ({ ...prev, operatorId: v }))}
+          onValueChange={handleOperatorChange}
         >
           <SelectTrigger className="h-12">
             <SelectValue placeholder="Select operator" />
           </SelectTrigger>
           <SelectContent>
             {operators.map((o) => (
-              <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+              <SelectItem key={o.id} value={o.id}>
+                {o.name} {o.machine ? `(${o.machine.name})` : ''}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
+
+      {/* Auto-fill notification */}
+      {autoFillMessage && (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              <p className="text-sm text-emerald-700 font-medium">{autoFillMessage}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Mould & Component */}
       <div className="space-y-2">

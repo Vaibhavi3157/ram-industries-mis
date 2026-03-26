@@ -79,6 +79,30 @@ curl -X PUT http://localhost:3001/api/operators/{id} \
 - Operators: `frontend/src/pages/masters/Operators.tsx`
 - Database: `backend/prisma/dev.db`
 
+## New Features Added
+
+### FEATURE-001: Auto-fill in Production Entry (26 March 2026)
+
+**What it does**:
+- When operator is selected → Machine auto-fills (if operator has assigned machine)
+- When machine is selected → Mould auto-fills (from today's plan or last production)
+- When mould is selected → Component & Raw Material auto-fill (from BOM)
+
+**Location**: `frontend/src/pages/production/ProductionEntry.tsx`
+
+**Key Functions**:
+```tsx
+handleOperatorChange(operatorId) // Auto-fills machine from operator.machineId
+handleMachineChange(machineId)   // Auto-fills mould from plan/last report
+handleMouldChange(mouldId)       // Auto-fills component, material from BOM
+```
+
+**Data Sources**:
+- Operator → Machine: `operator.machineId`
+- Machine → Mould: `productionPlans` (today) or `recentReports` (last)
+- Mould → Component: `mould.componentId`
+- Component → Material: `boms.find(b => b.componentId)`
+
 ## Running the Application
 ```bash
 # Backend
