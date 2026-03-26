@@ -210,7 +210,7 @@ export function ProductionList() {
                               variant="ghost"
                               size="icon"
                               className="hover:bg-blue-50 hover:text-blue-600"
-                              onClick={() => navigate(`/production/print/${report.id}`)}
+                              onClick={() => navigate(`/production/view/${report.id}`)}
                               title="View Report"
                             >
                               <Eye className="h-4 w-4" />
@@ -219,7 +219,7 @@ export function ProductionList() {
                               variant="ghost"
                               size="icon"
                               className="hover:bg-green-50 hover:text-green-600"
-                              onClick={() => navigate(`/production/print/${report.id}`)}
+                              onClick={() => navigate(`/production/print/${report.id}?autoPrint=true`)}
                               title="Print Report"
                             >
                               <Printer className="h-4 w-4" />

@@ -40,6 +40,7 @@ function App() {
           {/* Production */}
           <Route path="production/new" element={<ProductionEntry />} />
           <Route path="production/list" element={<ProductionList />} />
+          <Route path="production/view/:id" element={<PrintReport />} />
           <Route path="production/print/:id" element={<PrintReport />} />
 
           {/* Reports */}

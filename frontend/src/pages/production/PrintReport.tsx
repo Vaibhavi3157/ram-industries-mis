@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Printer, Download, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { productionReportsApi, type ProductionReport } from '@/services/api';
@@ -7,15 +7,28 @@ import { productionReportsApi, type ProductionReport } from '@/services/api';
 export function PrintReport() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const printRef = useRef<HTMLDivElement>(null);
   const [report, setReport] = useState<ProductionReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const autoPrint = searchParams.get('autoPrint') === 'true';
 
   useEffect(() => {
     if (id) {
       fetchReport(id);
     }
   }, [id]);
+
+  // Auto-trigger print when autoPrint=true and report is loaded
+  useEffect(() => {
+    if (autoPrint && report && !loading) {
+      // Small delay to ensure page is fully rendered
+      const timer = setTimeout(() => {
+        window.print();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [autoPrint, report, loading]);
 
   async function fetchReport(reportId: string) {
     try {
