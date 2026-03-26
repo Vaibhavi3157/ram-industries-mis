@@ -166,10 +166,20 @@ export function Dashboard() {
                 <div className="p-2.5 rounded-xl bg-blue-100">
                   <Factory className="h-5 w-5 text-blue-600" />
                 </div>
-                <span className="flex items-center text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                  <ArrowUpRight className="h-3 w-3 mr-0.5" />
-                  12%
-                </span>
+                {stats.todayProduction > 0 && stats.todayTarget > 0 && (
+                  <span className={`flex items-center text-xs font-medium px-2 py-1 rounded-full ${
+                    stats.todayProduction >= stats.todayTarget
+                      ? 'text-green-600 bg-green-50'
+                      : 'text-amber-600 bg-amber-50'
+                  }`}>
+                    {stats.todayProduction >= stats.todayTarget ? (
+                      <ArrowUpRight className="h-3 w-3 mr-0.5" />
+                    ) : (
+                      <ArrowDownRight className="h-3 w-3 mr-0.5" />
+                    )}
+                    {Math.round((stats.todayProduction / stats.todayTarget) * 100)}%
+                  </span>
+                )}
               </div>
               <div className="mt-4">
                 <p className="text-sm text-slate-500 font-medium">Today's Production</p>
@@ -186,10 +196,22 @@ export function Dashboard() {
                 <div className="p-2.5 rounded-xl bg-green-100">
                   <Gauge className="h-5 w-5 text-green-600" />
                 </div>
-                <span className="flex items-center text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                  <ArrowUpRight className="h-3 w-3 mr-0.5" />
-                  2.5%
-                </span>
+                {stats.efficiency > 0 && (
+                  <span className={`flex items-center text-xs font-medium px-2 py-1 rounded-full ${
+                    stats.efficiency >= 85
+                      ? 'text-green-600 bg-green-50'
+                      : stats.efficiency >= 70
+                      ? 'text-amber-600 bg-amber-50'
+                      : 'text-red-600 bg-red-50'
+                  }`}>
+                    {stats.efficiency >= 85 ? (
+                      <ArrowUpRight className="h-3 w-3 mr-0.5" />
+                    ) : (
+                      <ArrowDownRight className="h-3 w-3 mr-0.5" />
+                    )}
+                    {stats.efficiency}%
+                  </span>
+                )}
               </div>
               <div className="mt-4">
                 <p className="text-sm text-slate-500 font-medium">Efficiency</p>

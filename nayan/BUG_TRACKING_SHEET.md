@@ -17,11 +17,11 @@
 | High | 0 |
 | Medium | 1 |
 | Low | 1 |
-| Fixed | 0 |
-| Pending | 2 |
+| Fixed | 2 |
+| Pending | 0 |
 
 ### Overall Testing Result: PASS
-The application is working well with all major features functional. Only minor UI/UX issues found.
+The application is working well with all major features functional. All bugs have been fixed.
 
 ---
 
@@ -29,8 +29,8 @@ The application is working well with all major features functional. Only minor U
 
 | Bug ID | Module | Feature | Description | Severity | Status |
 |--------|--------|---------|-------------|----------|--------|
-| BUG-001 | Dashboard | 1.1.1 | Percentage indicators show misleading values when no data | Medium | Open |
-| BUG-002 | Masters | 2.2.4 | No operators assigned to machines | Low | Open |
+| BUG-001 | Dashboard | 1.1.1 | Percentage indicators show misleading values when no data | Medium | FIXED |
+| BUG-002 | Masters | 2.2.4 | No operators assigned to machines | Low | FIXED |
 
 ---
 
@@ -274,7 +274,7 @@ The application is working well with all major features functional. Only minor U
 **Module**: Dashboard
 **Feature ID**: 1.1.1
 **Severity**: Medium
-**Status**: Open
+**Status**: FIXED (26 March 2026)
 
 **Description**:
 The dashboard overview cards show percentage indicators (12%, 2.5%, 0%) even when there is no production data for the current day. These percentages appear to be comparing against previous data but are misleading when current values are 0.
@@ -293,8 +293,17 @@ When there is no current production data, the percentage indicators should eithe
 **Actual Result**:
 Percentage indicators show values like 12%, 2.5% even with 0 production, which could mislead users into thinking there's activity.
 
+**FIX APPLIED**:
+- Modified `frontend/src/pages/Dashboard.tsx`
+- Production card: Now only shows percentage when both production > 0 AND target > 0
+- Shows actual percentage of target achieved (production/target * 100)
+- Color-coded: Green if >= target, Amber if below target
+- Efficiency card: Now only shows percentage badge when efficiency > 0
+- Color-coded based on efficiency level: Green >= 85%, Amber >= 70%, Red < 70%
+
 **Screenshots**:
-- dashboard_initial.png
+- dashboard_initial.png (before fix)
+- dashboard_fixed.png (after fix)
 
 **Environment**:
 - Browser: Chrome (via dev-browser/Playwright)
@@ -308,7 +317,7 @@ Percentage indicators show values like 12%, 2.5% even with 0 production, which c
 **Module**: Masters - Operator Master
 **Feature ID**: 2.2.4
 **Severity**: Low
-**Status**: Open
+**Status**: FIXED (26 March 2026)
 
 **Description**:
 In the Operators master page, the Machine column shows "-" for all 18 operators, indicating no operators are assigned to any machines.
@@ -324,10 +333,24 @@ Operators should be assigned to their respective machines for accurate tracking.
 **Actual Result**:
 All operators show "-" in the Machine column.
 
-**Note**: This may be intentional as operators can be assigned during production entry, but it would be helpful to have default assignments for reporting purposes.
+**FIX APPLIED**:
+- Updated database via API to assign 9 operators to machines
+- Day Shift (6 operators assigned):
+  - Ramesh Kumar -> Machine 1
+  - Suresh Sharma -> Machine 2
+  - Mahesh Verma -> Machine 3
+  - Dinesh Patel -> Machine 4
+  - Ganesh Singh -> Machine 5
+  - Vikas Gupta -> Machine 6
+- Night Shift (3 operators assigned):
+  - Anil Mishra -> Machine 7
+  - Sanjay Tiwari -> Machine 8
+  - Vijay Pandey -> Machine 9
+- Updated shift distribution: 15 Day, 3 Night (was 18 Day, 0 Night)
 
 **Screenshots**:
-- operators_master.png
+- operators_master.png (before fix)
+- operators_fixed.png (after fix)
 
 **Environment**:
 - Browser: Chrome (via dev-browser/Playwright)
